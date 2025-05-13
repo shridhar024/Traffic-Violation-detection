@@ -1,0 +1,198 @@
+/ Blynk Template Details
+#define BLYNK_TEMPLATE_ID "TMPL3x6SAv7Al"
+#define BLYNK_TEMPLATE_NAME "traffic"
+#define BLYNK_AUTH_TOKEN "Nz8rfdu5cu-hEHpySicGtjkIlxj9wNIM"
+
+// Include Libraries
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <WiFi.h>
+#include <BlynkSimpleEsp32.h>
+
+// WiFi Credentials
+char ssid[] = "V2025";
+char pass[] = "12121212";
+
+// Initialize I2C LCD
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+
+// Traffic Light LEDs
+#define RED_LED     13
+#define YELLOW_LED  15
+#define GREEN_LED   16
+
+// Ultrasonic Sensor pins
+#define TRIG_PIN    14
+#define ECHO_PIN    12
+
+// Alert Output
+#define ALERT_PIN   0
+
+// Blynk Virtual Pins
+#define VPIN_RED       V0
+#define VPIN_YELLOW    V1
+#define VPIN_GREEN     V2
+#define VPIN_DISTANCE  V3
+#define VPIN_LCD       V4
+#define VPIN_CAR_ALERT V5
+#define VPIN_COUNT     V6    // <-- NEW: Vehicle count virtual pin
+
+// Initialize vehicle detection count
+int vehicleCount = 0;
+
+void setup() {
+  Serial.begin(115200);
+
+  Blynk.begin(BLYNK_AUTH_TOKEN, ssid, pass);
+
+  lcd.init();
+  lcd.backlight();
+
+  pinMode(RED_LED, OUTPUT);
+  pinMode(YELLOW_LED, OUTPUT);
+  pinMode(GREEN_LED, OUTPUT);
+  pinMode(TRIG_PIN, OUTPUT);
+  pinMode(ECHO_PIN, INPUT);
+  pinMode(ALERT_PIN, OUTPUT);
+
+  digitalWrite(RED_LED, LOW);
+  digitalWrite(YELLOW_LED, LOW);
+  digitalWrite(GREEN_LED, LOW);
+  digitalWrite(ALERT_PIN, LOW);
+
+  Serial.println("🚦 Traffic System Ready 🚦");
+}
+
+void loop() {
+  Blynk.run(); // Keep Blynk running
+
+  // RED Light Phase
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("RED");
+  Blynk.virtualWrite(VPIN_LCD, "RED Light");
+
+  digitalWrite(RED_LED, HIGH);
+  Blynk.virtualWrite(VPIN_RED, 255);
+  Blynk.virtualWrite(VPIN_YELLOW, 0);
+  Blynk.virtualWrite(VPIN_GREEN, 0);
+
+  for (int i = 30; i >= 0; i--) {
+    float distanceCm = measureDistance();
+
+    updateLCD(i, distanceCm);
+    updateVehicleDetection(distanceCm);
+
+    Serial.print("RED - Time Left: ");
+    Serial.print(i);
+    Serial.print("s | Distance: ");
+    Serial.print(distanceCm);
+    Serial.println("cm");
+
+    delay(1000);
+  }
+  digitalWrite(RED_LED, LOW);
+  digitalWrite(ALERT_PIN, LOW);
+
+  // YELLOW Light Phase
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("YELLOW");
+  Blynk.virtualWrite(VPIN_LCD, "Yellow Light");
+
+  digitalWrite(YELLOW_LED, HIGH);
+  Blynk.virtualWrite(VPIN_RED, 0);
+  Blynk.virtualWrite(VPIN_YELLOW, 255);
+  Blynk.virtualWrite(VPIN_GREEN, 0);
+
+  for (int i = 5; i >= 0; i--) {
+    lcd.setCursor(0, 1);
+    lcd.print("Time: ");
+    if (i < 10) lcd.print("0");
+    lcd.print(i);
+    lcd.print("s     "); // clear previous characters
+
+    Serial.print("YELLOW - Time Left: ");
+    Serial.println(i);
+
+    delay(1000);
+  }
+  digitalWrite(YELLOW_LED, LOW);
+
+  // GREEN Light Phase
+  lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print("GREEN");
+  Blynk.virtualWrite(VPIN_LCD, "Green Light");
+
+  digitalWrite(GREEN_LED, HIGH);
+  Blynk.virtualWrite(VPIN_RED, 0);
+  Blynk.virtualWrite(VPIN_YELLOW, 0);
+  Blynk.virtualWrite(VPIN_GREEN, 255);
+
+  for (int i = 15; i >= 0; i--) {
+    lcd.setCursor(0, 1);
+    lcd.print("Time: ");
+    if (i < 10) lcd.print("0");
+    lcd.print(i);
+    lcd.print("s     ");
+
+    Serial.print("GREEN - Time Left: ");
+    Serial.println(i);
+
+    delay(1000);
+  }
+  digitalWrite(GREEN_LED, LOW);
+}
+
+// Function to measure distance
+float measureDistance() {
+  long duration;
+  float distanceCm;
+
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(TRIG_PIN, LOW);
+
+  duration = pulseIn(ECHO_PIN, HIGH, 30000); // Timeout after 30ms
+  distanceCm = (duration * 0.0343) / 2.0;
+
+  return distanceCm;
+}
+
+// Function to update LCD smoothly
+void updateLCD(int timeLeft, float distance) {
+  lcd.setCursor(0, 1);
+  lcd.print("T:");
+  if (timeLeft < 10) lcd.print("0");
+  lcd.print(timeLeft);
+  lcd.print("s ");
+
+  lcd.setCursor(8, 1);
+  lcd.print("D:");
+  if (distance < 10) lcd.print("0");
+  lcd.print((int)distance);
+  lcd.print("cm ");
+
+  // Send distance to Blynk (real value)
+  Blynk.virtualWrite(VPIN_DISTANCE, distance);
+}
+
+// Function to detect vehicle and update alerts
+void updateVehicleDetection(float distance) {
+  if (distance > 0 && distance < 40) {
+    digitalWrite(ALERT_PIN, HIGH);
+    Serial.println("⚠️ ALERT: Vehicle detected close!");
+
+    vehicleCount++;
+    Blynk.virtualWrite(VPIN_COUNT, vehicleCount); // Send vehicle count to Blynk
+    Blynk.logEvent("vehicle_alert", "Vehicle detected near signal!");
+    Blynk.virtualWrite(VPIN_CAR_ALERT, 255); // Turn ON virtual LED
+
+  } else {
+    digitalWrite(ALERT_PIN, LOW);
+    Blynk.virtualWrite(VPIN_CAR_ALERT, 0);   // Turn OFF virtual LED
+  }
+}
