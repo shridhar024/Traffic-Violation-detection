@@ -1,0 +1,7 @@
+# 🔧 Hardware Components Used
+
+- **ESP32-CAM** – Camera module for live video capture
+- **ESP32** – For traffic light control & IoT sync
+- **Jumper Wires & Breadboard**
+- **5V Power Supply**
+- **Traffic Light Prototype (LEDs)**
